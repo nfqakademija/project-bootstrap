@@ -56,11 +56,12 @@ apache::dotconf { 'custom':
 }
 
 apache::module { 'rewrite': }
+apache::module { 'php5': }
 
-apache::vhost { 'wall.dev':
-  server_name   => 'wall.dev',
+apache::vhost { 'nfqakademija.dev':
+  server_name   => 'nfqakademija.dev',
   serveraliases => [
-    'www.wall.dev'
+    'nfqakademija.dev'
   ],
   docroot       => '/var/www/web/',
   port          => '80',
@@ -71,7 +72,7 @@ apache::vhost { 'wall.dev':
 
 class { 'php':
   service             => 'apache',
-  service_autorestart => false,
+  service_autorestart => true,
   module_prefix       => '',
 }
 
