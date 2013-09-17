@@ -1,4 +1,4 @@
-Demo project
+NFQ Akademija - Individualaus projekto infrastruktūra
 ========================
 
 Installiacija
