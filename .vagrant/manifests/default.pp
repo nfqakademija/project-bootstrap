@@ -132,7 +132,7 @@ puphpet::ini { 'php_cli':
 }
 
 class { 'mysql::server':
-  config_hash   => { 'root_password' => 'root', 'bind_address' => '0.0.0.0' }
+  config_hash   => { 'root_password' => 'root', 'bind_address' => '10.10.21.10' }
 }
 
 
