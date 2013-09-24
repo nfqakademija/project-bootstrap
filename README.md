@@ -7,6 +7,10 @@ Installiacija
 Pasileisti infrastruktūra reikės įsidiegti [virtualbox](1) ir [vagrant](2). Įdiegus vagrant papildomai reikės įdiegti papildymą. Tai padaryti galite konsolėje iškvietę komandą:
 
     vagrant plugin install vagrant-hostsupdater
+
+Isitikiname ar yra sudiegtas nfs paketas
+
+    sudo apt-get install nfs-kernel-server
     
 Tai sudiegę galime paleisti visą infrastruktūrą. Tai padarykite nueikite į projekto root direktoriją ir paleiskite komandą:
 
