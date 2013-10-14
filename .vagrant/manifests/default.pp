@@ -21,67 +21,93 @@ apt::source { 'packages.dotdeb.org':
   include_src       => true
 }
 
-if $lsbdistcodename == 'wheezy' {
-  apt::source { 'packages.dotdeb.org-php55':
-    location          => 'http://packages.dotdeb.org',
-    release           => 'wheezy-php55',
-    repos             => 'all',
-    required_packages => 'debian-keyring debian-archive-keyring',
-    key               => '89DF5277',
-    key_server        => 'keys.gnupg.net',
-    include_src       => true
-  }
-}
-
-package { 'apache2-mpm-prefork':
-  ensure => 'installed',
-  notify => Service['apache'],
-}
-
 class { 'puphpet::dotfiles': }
 
 package { [
     'build-essential',
     'vim',
     'curl',
-    'git-core'
+    'git-core',
+    'wget'
   ]:
   ensure  => 'installed',
 }
 
-class { 'apache': }
+class { 'nginx': }
 
-apache::dotconf { 'custom':
-  content => 'EnableSendfile Off',
+
+nginx::resource::vhost { 'wall.dev':
+  ensure       => present,
+  server_name  => [
+    'wall.dev',
+    'www.wall.dev'
+  ],
+  index_files  => [
+    'app_dev.php',
+    'app.php',
+    'index.php',
+    'index.html'
+  ],
+  listen_port  => 80,
+  www_root     => '/var/www/web/',
+  try_files    => ['$uri', '$uri/', '/app_dev.php?$args'],
 }
 
-apache::module { 'rewrite': }
-apache::module { 'php5': }
+$path_translated = 'PATH_TRANSLATED $document_root$fastcgi_path_info'
+$script_filename = 'SCRIPT_FILENAME $document_root$fastcgi_script_name'
 
-apache::vhost { 'nfqakademija.dev':
-  server_name   => 'nfqakademija.dev',
-  serveraliases => [
-    'nfqakademija.dev'
+nginx::resource::location { 'wall.dev-php':
+  ensure              => 'present',
+  index_files  => [
+    'app_dev.php',
+    'app.php',
+    'index.php',
+    'index.html'
   ],
-  docroot       => '/var/www/web/',
-  port          => '80',
-  env_variables => [
-],
-  priority      => '1',
+  vhost               => 'wall.dev',
+  location            => '~ \.php$',
+  proxy               => undef,
+  try_files           => ['$uri', '$uri/', '/app.php?$args'],
+  www_root            => '/var/www/web/',
+  location_cfg_append => {
+    'fastcgi_split_path_info' => '^(.+\.php)(/.+)$',
+    'fastcgi_param'           => 'PATH_INFO $fastcgi_path_info',
+    'fastcgi_param '          => $path_translated,
+    'fastcgi_param  '         => $script_filename,
+    'fastcgi_pass'            => 'unix:/var/run/php5-fpm.sock',
+    'fastcgi_index'           => 'app_dev.php',
+    'include'                 => 'fastcgi_params'
+  },
+  notify              => Class['nginx::service'],
 }
 
 class { 'php':
-  service             => 'apache',
-  service_autorestart => true,
-  module_prefix       => '',
+  package             => 'php5-fpm',
+  service             => 'php5-fpm',
+  service_autorestart => false,
+  config_file         => '/etc/php5/fpm/php.ini',
+  module_prefix       => ''
 }
 
-php::module { 'php5-mysql': }
-php::module { 'php5-cli': }
-php::module { 'php5-curl': }
-php::module { 'php5-gd': }
-php::module { 'php5-intl': }
-php::module { 'php5-mcrypt': }
+php::module {
+  [
+    'php5-mysql',
+    'php5-cli',
+    'php5-curl',
+    'php5-intl',
+    'php5-gd',
+    'php5-mcrypt',
+  ]:
+  service => 'php5-fpm',
+}
+
+service { 'php5-fpm':
+  ensure     => running,
+  enable     => true,
+  hasrestart => true,
+  hasstatus  => true,
+  require    => Package['php5-fpm'],
+}
 
 class { 'php::devel':
   require => Class['php'],
@@ -91,49 +117,64 @@ class { 'php::pear':
   require => Class['php'],
 }
 
-
-
+#prepare pear
+exec { "pear auto_discover" :
+  command => "/usr/bin/pear config-set auto_discover 1",
+  require => [Class['php::pear']]
+}
+exec { "pear update-channels" :
+  command => "/usr/bin/pear update-channels",
+  require => [Exec['pear auto_discover']]
+}
+#install phpunit
+exec {"pear install phpunit":
+  command => "/usr/bin/pear install --alldeps pear.phpunit.de/PHPUnit",
+  creates => '/usr/bin/phpunit',
+  require => Exec['pear update-channels']
+}
+# install phpcs
+exec {"pear install phpcs":
+  command => "/usr/bin/pear install --alldeps PHP_CodeSniffer",
+  creates => '/usr/bin/phpcs',
+  require => Exec['pear update-channels']
+}
 
 
 class { 'xdebug':
-  service => 'apache',
+  service => 'nginx',
 }
 
 class { 'composer':
-  require => Package['php5', 'curl'],
+  require => Package['php5-fpm', 'curl'],
 }
 
-$custom_php_settings = [
+puphpet::ini { 'xdebug':
+  value   => [
     'xdebug.default_enable = 1',
     'xdebug.remote_autostart = 0',
     'xdebug.remote_connect_back = 1',
-    'xdebug.max_nesting_level = 250',
     'xdebug.remote_enable = 1',
     'xdebug.remote_handler = "dbgp"',
     'xdebug.remote_port = 9000',
     'xdebug.idekey = "PHPSTORM"',
-    'display_errors = On',
-    'error_reporting = -1',
-    'date.timezone = "Europe/Vilnius"'
-]
-
-puphpet::ini { 'php_apache':
-  value   => $custom_php_settings,
-  ini     => '/etc/php5/apache2/conf.d/custom_php.ini',
-  notify  => Service['apache'],
+    'xdebug.max_nesting_level = 250'
+  ],
+  ini     => '/etc/php5/conf.d/custom_xdebug.ini',
+  notify  => Service['php5-fpm'],
   require => Class['php'],
 }
 
-puphpet::ini { 'php_cli':
-  value   => $custom_php_settings,
-  ini     => '/etc/php5/cli/conf.d/custom_php.ini',
-  notify  => Service['apache'],
+puphpet::ini { 'custom':
+  value   => [
+    'display_errors = On',
+    'error_reporting = -1',
+    'date.timezone = "Europe/Vilnius"'
+  ],
+  ini     => '/etc/php5/conf.d/custom_php.ini',
+  notify  => Service['php5-fpm'],
   require => Class['php'],
 }
 
 class { 'mysql::server':
-  config_hash   => { 'root_password' => 'root', 'bind_address' => '10.10.21.10' }
+  config_hash   => { 'root_password' => 'root', 'bind_address' => '0.0.0.0' }
 }
-
-
-
